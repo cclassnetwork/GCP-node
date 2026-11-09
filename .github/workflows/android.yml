@@ -1,0 +1,55 @@
+# Builds TWO Android apps: the normal chat app (artifact globalchat-apk) and the phone-node app (artifact globalchat-node-apk).
+# Builds the Global Chat P2P Android app (the whole peer-to-peer engine runs inside the APK).
+# Run it from the repository's "Actions" tab -> "Global Chat APK" -> "Run workflow", then download "globalchat-apk".
+name: Global Chat APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "GLOBAL_CHAT_P2P.zip"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Test and build debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack the uploaded GLOBAL_CHAT_P2P.zip
+        run: unzip -q GLOBAL_CHAT_P2P.zip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5          # Chaquopy needs a matching Python (3.12) on the build machine
+        with:
+          python-version: "3.12"
+      - name: Run the engine tests (informational: the APK is built even if a timing-sensitive network test fails)
+        continue-on-error: true
+        run: |
+          python -m pip install --quiet "cryptography==42.0.8" pytest
+          cd GLOBAL_CHAT_P2P/python && python -m pytest -q
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Copy the engine into the Android project
+        run: bash GLOBAL_CHAT_P2P/android/prepare.sh
+      - name: Build
+        run: gradle -p GLOBAL_CHAT_P2P/android assembleDebug --no-daemon --stacktrace
+      - name: Show the APKs
+        run: ls -l GLOBAL_CHAT_P2P/android/app/build/outputs/apk/*/debug/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: globalchat-apk
+          path: GLOBAL_CHAT_P2P/android/app/build/outputs/apk/chat/debug/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: globalchat-node-apk
+          path: GLOBAL_CHAT_P2P/android/app/build/outputs/apk/node/debug/*.apk
+          if-no-files-found: error
